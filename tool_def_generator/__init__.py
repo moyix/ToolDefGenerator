@@ -1,12 +1,12 @@
-from typing import Annotated, Callable, get_type_hints, get_args, get_origin
+from typing_extensions import Annotated
+from typing import Callable, get_type_hints, get_args, get_origin
 import inspect
 from typing import List, Tuple
 from collections import OrderedDict
 
 
-
 class ToolDefGenerator:
-    def __init__(self, type_map=None, strict=True, name_mappings: List[Tuple[str, str]] = None):
+    def __init__(self, type_map=None, strict=True, document_defaults=True, name_mappings: List[Tuple[str, str]] = None) -> None:
         if type_map is None:
             type_map = {
                 str: "string",
@@ -16,6 +16,7 @@ class ToolDefGenerator:
             }
         self.type_map = type_map
         self.strict = strict
+        self.document_defaults = document_defaults
         self.name_mapping = {original: custom for original, custom in name_mappings} if name_mappings else {}
 
     def generate(self, *functions: Callable) -> list:
@@ -62,6 +63,9 @@ class ToolDefGenerator:
         params_dict = OrderedDict()
         parameters = inspect.signature(function).parameters
         for name, param in parameters.items():
+            # Skip 'self' or 'cls' parameters
+            if name in ['self', 'cls']:
+                continue
             if param.annotation is inspect._empty:
                 if self.strict:
                     raise ValueError(f"Parameter {name} is missing type annotations")
@@ -81,20 +85,35 @@ class ToolDefGenerator:
                         param_type = self.type_map.get(param.annotation, "string")
                         param_desc = ""
 
+            if self.document_defaults and param_desc and parameters[name].default is not inspect._empty:
+                    param_desc += f" (default: {repr(parameters[name].default)})"
+
             params_dict[name] = {
                     'type': param_type,
                     'description': param_desc if param_desc else ""
             }
 
-        # Get the name
-        function_name = self.name_mapping.get(function.__name__, function.__name__)
+        # Get the name; to support methods as well as functions, check __qualname__
+        function_name = None
+        if hasattr(function, '__qualname__'):
+            function_name = self.name_mapping.get(function.__qualname__, None)
+        if function_name is None:
+            if hasattr(function, '__name__'):
+                function_name = function.__name__
+            elif hasattr(function, '__class__') and hasattr(function.__class__, '__name__'):
+                function_name = function.__class__.__name__
+            else:
+                raise ValueError("Function is missing a name")
+        function_name = self.name_mapping.get(function_name, function_name)
+
         result = {
             "name": function_name,
             "description": description,
             "parameters": {
                 "type": "object",
                 "properties": params_dict,
-                "required": list(params_dict.keys())
+                # Required parameters are those without default values
+                "required": [p for p in params_dict if parameters[p].default is inspect._empty]
             }
         }
         return result

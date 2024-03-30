@@ -1,5 +1,6 @@
 import pytest
 from tool_def_generator import ToolDefGenerator
+from typing_extensions import Annotated
 
 def test_initialization():
     # Test default initialization
@@ -56,3 +57,49 @@ def test_return_type_checking():
     with pytest.raises(ValueError):
         generator.generate(test_func_wrong_return_type)
 
+def test_method_param_exclusion():
+    generator = ToolDefGenerator()
+
+    class A:
+        def __init__(self):
+            pass
+
+        def instance_method(self, foo: Annotated[int, "foo"]):
+            """instance_method docstring"""
+            pass
+
+        @classmethod
+        def class_method(cls, bar: Annotated[int, "bar"]):
+            """class_method docstring"""
+            pass
+
+        @staticmethod
+        def static_method(baz: Annotated[int, "baz"]):
+            """static_method docstring"""
+            pass
+
+    def regular_function(x: Annotated[int,"x"], y: Annotated[int,"y"]):
+        """regular_function docstring"""
+        pass
+
+    schema = generator.generate(A.instance_method)
+    assert len(schema) == 1
+    assert set(schema[0]['function']['parameters']['properties'].keys()) == { 'foo' }
+    schema = generator.generate(A().instance_method)
+    assert len(schema) == 1
+    assert set(schema[0]['function']['parameters']['properties'].keys()) == { 'foo' }
+    schema = generator.generate(A.class_method)
+    assert len(schema) == 1
+    assert set(schema[0]['function']['parameters']['properties'].keys()) == { 'bar' }
+    schema = generator.generate(A().class_method)
+    assert len(schema) == 1
+    assert set(schema[0]['function']['parameters']['properties'].keys()) == { 'bar' }
+    schema = generator.generate(A.static_method)
+    assert len(schema) == 1
+    assert set(schema[0]['function']['parameters']['properties'].keys()) == { 'baz' }
+    schema = generator.generate(A().static_method)
+    assert len(schema) == 1
+    assert set(schema[0]['function']['parameters']['properties'].keys()) == { 'baz' }
+    schema = generator.generate(regular_function)
+    assert len(schema) == 1
+    assert set(schema[0]['function']['parameters']['properties'].keys()) == { 'x', 'y' }
